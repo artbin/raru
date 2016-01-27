@@ -8,7 +8,12 @@ import (
 )
 
 func main() {
-	if err := raru.Exec(os.Args[0], os.Args[1:]...); err != nil {
+	exer, err := raru.NewExecutor()
+	if err != nil {
+		log.Printf("raru critical failure: %s", err.Error())
+		os.Exit(1)
+	}
+	if err := exer.Exec(os.Args[0], os.Args[1:]...); err != nil {
 		log.Printf("raru critical failure: %s", err.Error())
 		os.Exit(1)
 	}

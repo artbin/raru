@@ -20,7 +20,13 @@ func main() {
 		usageQuit()
 	}
 
-	if err := raru.Exec(os.Args[1], os.Args[2:]...); err != nil {
+	exer, err := raru.NewExecutor()
+	if err != nil {
+		log.Printf("raru critical failure: %s", err.Error())
+		os.Exit(1)
+	}
+
+	if err := exer.Exec(os.Args[1], os.Args[2:]...); err != nil {
 		log.Printf("raru critical failure: %s", err.Error())
 		os.Exit(1)
 	}

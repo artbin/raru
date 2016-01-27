@@ -21,12 +21,18 @@ func main() {
 		usageQuit()
 	}
 
+	exer, err := raru.NewExecutor()
+	if err != nil {
+		log.Printf("raru critical failure: %s", err.Error())
+		os.Exit(1)
+	}
+
 	cmd := exec.Command(os.Args[1], os.Args[2:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	if err := raru.Spawn(cmd); err != nil {
+	if err := exer.Spawn(cmd); err != nil {
 		log.Printf("raru critical failure: %s", err.Error())
 		os.Exit(1)
 	}

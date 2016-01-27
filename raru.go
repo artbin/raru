@@ -1,22 +1,43 @@
 package raru
 
 import (
-	"crypto/rand"
 	"fmt"
-	"math"
-	"math/big"
 	"os"
 	"os/exec"
 	"syscall"
+
+	"github.com/ArtemKulyabin/yax/osx"
+	"github.com/ArtemKulyabin/yax/syscallx"
 )
 
-func Spawn(cmd *exec.Cmd) (err error) {
+type Executor struct {
+	name   string
+	args   []string
+	id     int
+	chroot string
+	path   string
+}
+
+func NewExecutor() (exer *Executor, err error) {
 	id, err := RandomID()
 	if err != nil {
 		return
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{}
-	cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(id), Gid: uint32(id)}
+	return &Executor{id: id}, nil
+}
+
+func (exer *Executor) Exec(name string, arg ...string) (err error) {
+	exer.name = name
+	exer.args = arg
+	return exer.execute()
+}
+
+func (exer *Executor) SetChrootDir(path string) {
+	exer.chroot = path
+}
+
+func (exer *Executor) Spawn(cmd *exec.Cmd) (err error) {
+	exer.Prepare(cmd)
 	err = cmd.Run()
 	if err != nil {
 		return fmt.Errorf("Not able to execute: %s", err)
@@ -24,16 +45,30 @@ func Spawn(cmd *exec.Cmd) (err error) {
 	return
 }
 
-func Exec(name string, arg ...string) (err error) {
-	id, err := RandomID()
-	if err != nil {
-		return
+func (exer *Executor) Prepare(cmd *exec.Cmd) (err error) {
+	exer.path = cmd.Path
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
+	if exer.chroot != "" {
+		if cmd.Dir == "" {
+			cmd.Dir = "/"
+		}
+		cmd.SysProcAttr.Chroot = exer.chroot
+		if err = exer.MkJail(); err != nil {
+			return
+		}
+	}
+	cmd.SysProcAttr.Credential = &syscall.Credential{Uid: uint32(exer.id), Gid: uint32(exer.id)}
+	return
+}
 
-	path, err := exec.LookPath(name)
+func (exer *Executor) execute() (err error) {
+	path, err := exec.LookPath(exer.name)
 	if err != nil {
-		return fmt.Errorf("Not able to execute: %s", err)
+		return fmt.Errorf("Executable not found: %s", err)
 	}
+	exer.path = path
 
 	env := os.Environ()
 
@@ -42,34 +77,52 @@ func Exec(name string, arg ...string) (err error) {
 		return fmt.Errorf("getcwd() failed: %s", err)
 	}
 
-	err = Setgid(id)
+	if exer.chroot != "" {
+		if err = exer.MkJail(); err != nil {
+			return
+		}
+		if err = os.Chdir(exer.chroot); err != nil {
+			return fmt.Errorf(`Unable to chdir("/"): %s`, err)
+		}
+		if err = syscall.Chroot("."); err != nil {
+			return
+		}
+	}
+
+	err = syscallx.Setgid(exer.id)
 	if err != nil {
 		return fmt.Errorf("Unable to setgid(), aborting: %s", err)
 	}
-	err = Setuid(id)
+	err = syscallx.Setuid(exer.id)
 	if err != nil {
 		return fmt.Errorf("Unable to setuid(), aborting: %s", err)
 	}
 
-	err = os.Chdir(cwd)
-	if err != nil {
-		err = os.Chdir("/")
+	if exer.chroot == "" {
+		err = os.Chdir(cwd)
 		if err != nil {
-			return fmt.Errorf(`Unable to chdir("/"): %s`, err)
+			err = os.Chdir("/")
+			if err != nil {
+				return fmt.Errorf(`Unable to chdir("/"): %s`, err)
+			}
 		}
 	}
 
-	err = syscall.Exec(path, append([]string{name}, arg...), env)
+	err = syscall.Exec(exer.path, append([]string{exer.name}, exer.args...), env)
 	if err != nil {
 		return fmt.Errorf("Not able to execute: %s", err)
 	}
 	return
 }
 
-func RandomID() (int, error) {
-	r, err := rand.Int(rand.Reader, big.NewInt(math.MaxUint16))
+func (exer *Executor) MkJail() (err error) {
+	err = MkJail(exer.chroot, []string{exer.path})
 	if err != nil {
-		return 0, fmt.Errorf("Random generator error: %s", err)
+		return
 	}
-	return 31337 + int(r.Int64()), nil
+	// Very important! Apply recursive chown for jail.
+	// Only current random user has access to jail.
+	// suid and sgid binaries have no effect for break security.
+	err = osx.Chown(exer.chroot, exer.id, exer.id)
+	return
 }

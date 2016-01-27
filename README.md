@@ -18,6 +18,12 @@ $ go get github.com/ArtemKulyabin/raru/cmd/raru
 $ go get github.com/ArtemKulyabin/raru/cmd/raru-spawn
 ```
 
+#### Jail - run program as random user and changes the apparent root directory for the running process using a chroot(2) system call. If the program linked with dynamic libraries, they are copied into the root directory of the process.
+
+```
+$ go get github.com/ArtemKulyabin/raru/cmd/raru-jail
+```
+
 ### Package
 
 ```
@@ -37,6 +43,11 @@ $ raru curl https://fishysite
 ...
 ```
 
+```
+$ raru-jail run --chroot /dir /bin/ls
+...
+```
+
 ### Package
 
 ```
@@ -48,9 +59,8 @@ import (
 )
 
 func main() {
-  log.Print(raru.Exec(os.Args[1], os.Args[2:]...))
+  log.Println(raru.Exec(os.Args[1], os.Args[2:]...))
 }
-
 ```
 
 ## Cross compilation
